@@ -415,7 +415,10 @@ function EntryForm({ title, mode, data, entries, setEntries, cash, settings, boo
 function JournalTable({ rows }) {
   if (!rows.length) return <p className="quiet">Nenhum lançamento.</p>;
   return <div className="table-wrap block"><table className="data"><thead><tr><th>Data</th><th>Histórico</th><th>Partidas</th></tr></thead><tbody>
-    {rows.map((row) => <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.synthetic ? "Apuração · " : ""}{row.history || KIND_LABELS[row.kind]}</td><td>{row.lines.map((line, index) => <div className={line.c ? "journal-line credit" : "journal-line"} key={index}><span>{line.d ? "D" : "C"} {line.name}</span><span className="num">{formatNumber(line.d || line.c)}</span></div>)}</td></tr>)}
+    {rows.map((row) => <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.synthetic ? "Apuração · " : ""}{row.history || KIND_LABELS[row.kind]}</td><td>{row.lines.map((line, index) => {
+      const credit = row.kind === "devolucao" ? !line.c : !!line.c;
+      return <div className={credit ? "journal-line credit" : "journal-line"} key={index}><span>{credit ? "C" : "D"} {line.name}</span><span className="num">{formatNumber(line.d || line.c)}</span></div>;
+    })}</td></tr>)}
   </tbody></table></div>;
 }
 
