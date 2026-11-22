@@ -22,15 +22,24 @@ const CASH_KEY = "contabilidade-caixa-inicial";
 const ENTRY_KEY = "contabilidade-lancamentos-v1";
 const SETTINGS_KEY = "contabilidade-config";
 const MENUS = [["inicio", "Início"], ["cadastros", "Cadastros"], ["lancamentos", "Lançamentos"], ["estoque", "Estoque"], ["prazo", "Prazo"], ["demonstracoes", "Demonstrações"], ["extras", "Extras"]];
-const TITLES = {
-  inicio: ["Painel", "Posição do exercício"],
-  cadastros: ["Cadastros", "Dados que alimentam o cálculo"],
-  lancamentos: ["Lançamentos", "Livro diário"],
-  estoque: ["Estoque", "Ficha por item"],
-  prazo: ["Prazo", "Clientes e fornecedores"],
-  demonstracoes: ["Demonstrações", "Relatórios do exercício"],
-  extras: ["Extras", "Empresa, cópia e conferência"],
+const FICHA = {
+  inicio: ["001", "Resumo do exercício"],
+  cadastros: ["C1", "Cadastros"],
+  lancamentos: ["L1", "Livro diário"],
+  estoque: ["E1", "Ficha de estoque"],
+  prazo: ["P1", "Contas a prazo"],
+  extras: ["X1", "Arquivo e conferência"],
 };
+const REPORTS = [
+  ["dre", "DRE", "D1", "Demonstração do resultado"],
+  ["bp", "Balanço", "D2", "Balanço patrimonial"],
+  ["dmpl", "DMPL", "D3", "Mutações do patrimônio líquido"],
+  ["dfc", "DFC", "D4", "Fluxo de caixa — indireto"],
+  ["direto", "Direto", "D5", "Fluxo de caixa — direto"],
+  ["dva", "DVA", "D6", "Valor adicionado"],
+  ["diario", "Diário", "D7", "Livro diário"],
+  ["razao", "Razão", "D8", "Livro razão"],
+];
 const MONTH_OPTIONS = [["", "Exercício completo"], ...["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((name, index) => [`2026-${String(index + 1).padStart(2, "0")}`, name])];
 
 function emptyData() { return { items: [], suppliers: [], customers: [], assets: [], accounts: [] }; }
@@ -40,10 +49,6 @@ function download(name, content, mime) {
   const link = document.createElement("a");
   link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-function money(cents) {
-  const abs = formatBRL(Math.abs(Number(cents) || 0));
-  return Number(cents) < 0 ? `(${abs})` : abs;
 }
 function toIso(text) {
   const value = String(text || "").trim();
@@ -69,6 +74,8 @@ function ledgerFrom(journal) {
 
 export function App() {
   const [menu, setMenu] = useState("inicio");
+  const [report, setReport] = useState("dre");
+  const [month, setMonth] = useState("");
   const [data, setData] = useState(() => ({ ...emptyData(), ...readJson(DATA_KEY, {}) }));
   const [cash, setCash] = useState(() => localStorage.getItem(CASH_KEY) || "");
   const [entries, setEntries] = useState(() => { const value = readJson(ENTRY_KEY, []); return Array.isArray(value) ? value : []; });
@@ -78,7 +85,9 @@ export function App() {
   useEffect(() => localStorage.setItem(ENTRY_KEY, JSON.stringify(entries)), [entries]);
   useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
   const books = useMemo(() => computeBooks({ items: data.items, assets: data.assets, entries, cash, settings }), [data, entries, cash, settings]);
-  const title = TITLES[menu];
+  const reportMeta = REPORTS.find((row) => row[0] === report) || REPORTS[0];
+  const [fichaNo, fichaTitle] = menu === "demonstracoes" ? [reportMeta[2], reportMeta[3]] : FICHA[menu];
+  const periodLabel = month && menu === "demonstracoes" ? `${MONTH_OPTIONS.find((row) => row[0] === month)?.[1]} 2026` : "jan–dez 2026";
   function loadSample() {
     if (entries.length && !confirm("Trocar os cadastros pelo exemplo da papelaria? Os lançamentos atuais serão apagados.")) return;
     const sample = papelariaOpening();
@@ -91,81 +100,93 @@ export function App() {
     if (!confirm("Apagar cadastros, lançamentos e saldo deste navegador?")) return;
     setData(emptyData()); setCash(""); setEntries([]); setSettings(defaultSettings());
   }
-  return <div className="app">
-    <aside className="sidebar">
-      <div className="brand"><strong>{settings.companyName || "Papelaria"}</strong><span>Livro diário · 2026</span></div>
-      <nav aria-label="Menu principal">{MENUS.map(([id, name]) => <button key={id} className={menu === id ? "active" : ""} onClick={() => setMenu(id)}>{name}</button>)}</nav>
-      <footer>Exercício<strong>01/01/2026 — 31/12/2026</strong></footer>
-    </aside>
-    <div className="main">
-      <header className="top">
-        <div><p>{title[1]}</p><h1>{title[0]}</h1></div>
-        <div className="period">Período fixo<strong>01/01 a 31/12/2026</strong></div>
-      </header>
-      <div className="content">
-        {menu === "inicio" && <Dashboard books={books} settings={settings} data={data} onSample={loadSample} />}
-        {menu === "cadastros" && <Registers data={data} setData={setData} cash={cash} setCash={setCash} entries={entries} books={books} settings={settings} setSettings={setSettings} />}
-        {menu === "lancamentos" && <Journal data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
-        {menu === "estoque" && <Stock data={data} books={books} />}
-        {menu === "prazo" && <Credit data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
-        {menu === "demonstracoes" && <Statements settings={settings} data={data} entries={entries} cash={cash} />}
-        {menu === "extras" && <Extras settings={settings} setSettings={setSettings} data={data} cash={cash} entries={entries} setData={setData} setCash={setCash} setEntries={setEntries} books={books} onSample={loadSample} onClear={clearAll} />}
+  return <div className="gaveta-app">
+    <header className="gaveta">
+      <span className="etiqueta">{settings.companyName || "Papelaria"} · Arquivo contábil</span>
+      <span className="puxador" aria-hidden="true" />
+      <span className="ano">Exercício 2026</span>
+    </header>
+    <nav className="abas" aria-label="Menu principal">
+      {MENUS.map(([id, name]) => <button key={id} data-tab={id} className={menu === id ? "aba on" : "aba"} onClick={() => setMenu(id)}>{name}</button>)}
+    </nav>
+    <main className={menu === "demonstracoes" ? "ficha com-indice" : "ficha"}>
+      <div className="cab">
+        <div><span className="lbl" style={{ color: "var(--margem)" }}>Ficha nº</span><div className="tp vermelho">{fichaNo}</div></div>
+        <div><span className="lbl">Título</span><div className="tp">{fichaTitle}</div></div>
+        <div><span className="lbl">Período</span><div className="tp">{periodLabel}</div></div>
+        <div><span className="lbl">{menu === "demonstracoes" ? "Valores em" : "Método"}</span><div className="tp">{menu === "demonstracoes" ? "R$" : (books.method === "peps" ? "PEPS" : "Custo médio")}</div></div>
       </div>
-    </div>
+      <div className="corpo">
+        <div className="numeros" aria-hidden="true"><span>{Array.from({ length: 60 }, (_, index) => String(index + 1).padStart(2, "0")).join("\n")}</span></div>
+        <div className="miolo">
+          {menu === "inicio" && <Dashboard books={books} settings={settings} data={data} onSample={loadSample} />}
+          {menu === "cadastros" && <Registers data={data} setData={setData} cash={cash} setCash={setCash} entries={entries} books={books} settings={settings} setSettings={setSettings} />}
+          {menu === "lancamentos" && <Journal data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
+          {menu === "estoque" && <Stock data={data} books={books} />}
+          {menu === "prazo" && <Credit data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
+          {menu === "demonstracoes" && <Statements report={report} setReport={setReport} month={month} setMonth={setMonth} settings={settings} data={data} entries={entries} cash={cash} />}
+          {menu === "extras" && <Extras settings={settings} setSettings={setSettings} data={data} cash={cash} entries={entries} setData={setData} setCash={setCash} setEntries={setEntries} books={books} onSample={loadSample} onClear={clearAll} />}
+        </div>
+      </div>
+      {menu === "demonstracoes" && <nav className="indice no-print" aria-label="Demonstrações">
+        {REPORTS.map(([id, name]) => <button key={id} className={report === id ? "on" : ""} onClick={() => setReport(id)}>{name}</button>)}
+      </nav>}
+    </main>
   </div>;
 }
 
 function Dashboard({ books, settings, data, onSample }) {
-  const empty = !data.items.length && !data.assets.length && !cashValue(books);
-  return <>
-    <p className="quiet">{settings.activity}</p>
-    <div className="metrics">
-      <Metric label="Receita líquida" value={money(books.dre.netRevenue)} />
-      <Metric label="Lucro líquido" value={money(books.result)} />
-      <Metric label="Caixa" value={money(books.assetsRows.find((row) => row.name.startsWith("Caixa"))?.value || 0)} />
-      <Metric label="Margem líquida" value={percent(books.margins.net)} />
+  const empty = !data.items.length && !data.assets.length && !books.opening.cashCents;
+  const cashNow = books.assetsRows.find((row) => row.name.startsWith("Caixa"))?.value || 0;
+  return <div className="painel">
+    <div>
+      <h2>Como fechou o ano</h2>
+      <p className="hint">{settings.activity}</p>
+      {empty && <p className="hint">Nada cadastrado ainda. <button className="linkish" onClick={onSample}>Preencher os saldos da papelaria</button></p>}
+      <div className="campos">
+        <div className="campo"><span className="lbl">Receita líquida</span><span className="v">{formatNumber(books.dre.netRevenue)}</span></div>
+        <div className="campo"><span className="lbl">Lucro líquido</span><span className="v">{formatNumber(books.result)}</span>{books.margins.net > 0 && <span className="s">{percent(books.margins.net)} da receita</span>}</div>
+        <div className="campo"><span className="lbl">Caixa em 31/12</span><span className="v">{formatNumber(cashNow)}</span></div>
+        <div className="campo"><span className="lbl">Estoque em 31/12</span><span className="v">{formatNumber(books.inventory)}</span></div>
+      </div>
+      <MonthBars series={books.monthly} />
     </div>
-    <div className="metrics-sub">
-      <Metric label="Margem bruta" value={percent(books.margins.gross)} />
-      <Metric label="Estoque" value={money(books.inventory)} />
-      <Metric label="A receber" value={money(books.customers)} />
-      <Metric label="A pagar" value={money(books.suppliers)} />
-    </div>
-    <div className={books.difference === 0 ? "equation ok" : "equation bad"}>
-      <span>Ativo {money(books.assetsTotal)}</span>
-      <span>Passivo {money(books.liabilitiesTotal)} + PL {money(books.equityTotal)}</span>
-      <b>{books.difference === 0 ? "Fecha" : `Diferença ${formatBRL(books.difference)}`}</b>
-    </div>
-    {empty && <p className="quiet">Nada cadastrado ainda. <button className="linkish" onClick={onSample}>Preencher os saldos da papelaria</button></p>}
-    <section className="block">
-      <h2>Ano</h2>
-      <div className="legend"><span><i className="swatch rev" />Receita líquida</span><span><i className="swatch cmv" />CMV</span></div>
-      <MonthChart series={books.monthly} />
-    </section>
-    <section className="block">
-      <h2>Estoque agora</h2>
-      <StockTable items={data.items} balances={books.balances} />
-    </section>
-  </>;
+    <aside className="gaveta-contas">
+      <h2>Fichas de conta</h2>
+      <AccountDrawer books={books} />
+      <Carimbo difference={books.difference} when="31/12/2026" />
+    </aside>
+  </div>;
 }
-function cashValue(books) { return books.opening.cashCents; }
-function Metric({ label, value }) { return <div><span>{label}</span><strong>{value}</strong></div>; }
-function MonthChart({ series }) {
-  const max = Math.max(1, ...series.map((item) => Math.max(item.revenue, item.cmv, 0)));
-  if (!series.some((item) => item.revenue || item.cmv)) return <p className="quiet">Sem receita no exercício. A depreciação do saldo inicial, quando houver vida útil, entra em 31/12.</p>;
-  return <svg className="chart" viewBox="0 0 720 188" role="img" aria-label="Receita líquida e CMV por mês">
-    <line x1="16" y1="148" x2="704" y2="148" stroke="#e4dcd0" />
-    {series.map((item, index) => {
-      const x = 22 + index * 58;
-      const revenue = (item.revenue / max) * 132;
-      const cmv = (item.cmv / max) * 132;
-      return <g key={item.month}>
-        <rect x={x} y={148 - revenue} width="18" height={revenue} fill="#1f5c45" />
-        <rect x={x + 20} y={148 - cmv} width="18" height={cmv} fill="#c4b39a" />
-        <text x={x + 19} y="166" textAnchor="middle" fill="#6d655c" fontSize="12" fontFamily="IBM Plex Sans, sans-serif">{item.label}</text>
-      </g>;
-    })}
-  </svg>;
+function shortReais(cents) {
+  return (Number(cents || 0) / 100).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}
+function MonthBars({ series }) {
+  const max = Math.max(1, ...series.map((item) => item.revenue));
+  const has = series.some((item) => item.revenue);
+  return <div className="graf">
+    <span className="lbl">Receita líquida por mês (R$)</span>
+    {!has ? <p className="hint">Sem receita no exercício. A depreciação do saldo inicial, quando houver vida útil, entra em 31/12.</p> : <>
+      <div className="barras" role="img" aria-label="Receita líquida por mês">
+        {series.map((item) => <div key={item.month} className={item.revenue && item.revenue === max ? "b max" : "b"} style={{ height: `${Math.max(0, Math.round((item.revenue / max) * 100))}%` }}>{item.revenue > 0 && <span>{shortReais(item.revenue)}</span>}</div>)}
+      </div>
+      <div className="meses">{series.map((item) => <div key={item.month}>{item.label}</div>)}</div>
+    </>}
+  </div>;
+}
+function AccountDrawer({ books }) {
+  const rows = [];
+  const push = (name, value, kind, always = false) => { if (always || value) rows.push({ name, value, kind }); };
+  for (const row of books.assetCurrent) push(row.name, row.value, "ativo", true);
+  for (const row of books.assetNonCurrent) if (!row.header) push(row.name, row.value, "ativo");
+  for (const row of books.liabilityCurrent) push(row.name, row.value, "passivo");
+  for (const row of books.liabilityNonCurrent) push(row.name, row.value, "passivo");
+  for (const row of books.equityRows) push(row.name, row.value, "pl", true);
+  return <div className="kdx">{rows.map((row, index) => <div className={`k ${row.kind}`} key={row.name} style={{ "--x": `${14 + (index * 36) % 160}px` }}><i aria-hidden="true" /><span className="n">{row.name}</span><span className="sv">{formatNumber(row.value)}</span></div>)}</div>;
+}
+function Carimbo({ difference, when }) {
+  const ok = difference === 0;
+  return <div className={ok ? "carimbo" : "carimbo nao"} role="status">{ok ? "BALANÇO CONFERE" : "NÃO CONFERE"}<small>{ok ? `ativo = passivo + PL · ${when}` : `diferença ${formatNumber(difference)}`}</small></div>;
 }
 
 function Registers({ data, setData, cash, setCash, entries, books, settings, setSettings }) {
@@ -417,44 +438,55 @@ function StockTable({ items, balances }) {
     })}
   </tbody></table></div>;
 }
+function unitCost(total, qty) { return qty ? Math.round(total / qty) : 0; }
+function cell(qty, total) { return qty ? <>{qty}</> : ""; }
 function Kardex({ item, movements }) {
   const openingQty = Number(item.quantity || 0);
-  const openingValue = Math.round((Number.isInteger(openingQty) && openingQty > 0 ? openingQty : 0) * (toCents(item.unitCost) || 0));
-  const rows = [{ date: "2026-01-01", history: "Saldo inicial", qty: openingQty, inbound: openingValue, outbound: 0, afterQty: openingQty, afterValue: openingValue }, ...movements.map((row) => {
+  const safeQty = Number.isInteger(openingQty) && openingQty > 0 ? openingQty : 0;
+  const openingValue = Math.round(safeQty * (toCents(item.unitCost) || 0));
+  const rows = [{ date: "2026-01-01", history: "Saldo inicial", inQty: 0, inTotal: 0, outQty: 0, outTotal: 0, balQty: safeQty, balTotal: openingValue }, ...movements.map((row) => {
     const delta = row.afterValue - row.beforeValue;
-    return { date: row.date, history: KIND_LABELS[row.kind] || row.kind, qty: row.quantity, inbound: delta > 0 ? delta : 0, outbound: delta < 0 ? -delta : 0, afterQty: row.afterQty, afterValue: row.afterValue };
+    const inbound = delta > 0;
+    const total = Math.abs(delta);
+    return { date: row.date, history: KIND_LABELS[row.kind] || row.kind, inQty: inbound ? row.quantity : 0, inTotal: inbound ? total : 0, outQty: inbound ? 0 : row.quantity, outTotal: inbound ? 0 : total, balQty: row.afterQty, balTotal: row.afterValue };
   })];
-  return <div className="table-wrap"><table className="data"><thead><tr><th>Data</th><th>Movimento</th><th className="num">Qtd</th><th className="num">Entrada</th><th className="num">Saída</th><th className="num">Saldo qtd</th><th className="num">Saldo R$</th></tr></thead><tbody>
-    {rows.map((row, index) => <tr key={index}><td>{formatDate(row.date)}</td><td>{row.history}</td><td className="num">{row.qty}</td><td className="num">{formatNumber(row.inbound)}</td><td className="num">{formatNumber(row.outbound)}</td><td className="num">{row.afterQty}</td><td className="num">{formatNumber(row.afterValue)}</td></tr>)}
+  const show = (qty, total) => qty ? formatNumber(total) : "";
+  return <div className="table-wrap"><table className="kardex"><thead>
+    <tr><th rowSpan="2">Data</th><th rowSpan="2">Histórico</th><th colSpan="3">Entrada</th><th colSpan="3">Saída</th><th colSpan="3">Saldo</th></tr>
+    <tr><th className="num">Qtd</th><th className="num">Unit.</th><th className="num">Total</th><th className="num">Qtd</th><th className="num">Unit.</th><th className="num">Total</th><th className="num">Qtd</th><th className="num">Unit.</th><th className="num">Total</th></tr>
+  </thead><tbody>
+    {rows.map((row, index) => <tr key={index}>
+      <td>{formatDate(row.date)}</td><td>{row.history}</td>
+      <td className="num">{cell(row.inQty)}</td><td className="num">{row.inQty ? formatNumber(unitCost(row.inTotal, row.inQty)) : ""}</td><td className="num">{show(row.inQty, row.inTotal)}</td>
+      <td className="num">{cell(row.outQty)}</td><td className="num">{row.outQty ? formatNumber(unitCost(row.outTotal, row.outQty)) : ""}</td><td className="num">{show(row.outQty, row.outTotal)}</td>
+      <td className="num">{row.balQty}</td><td className="num">{row.balQty ? formatNumber(unitCost(row.balTotal, row.balQty)) : ""}</td><td className="num">{formatNumber(row.balTotal)}</td>
+    </tr>)}
   </tbody></table></div>;
 }
 
-function Statements({ settings, data, entries, cash }) {
-  const [month, setMonth] = useState("");
-  const [view, setView] = useState("dre");
+function Statements({ report, month, setMonth, settings, data, entries, cash }) {
   const books = useMemo(() => computeBooks({ items: data.items, assets: data.assets, entries, cash, settings, month }), [data, entries, cash, settings, month]);
   const period = month ? `${MONTH_OPTIONS.find((row) => row[0] === month)?.[1]} de 2026` : "1º de janeiro a 31 de dezembro de 2026";
-  const views = [["dre", "DRE"], ["bp", "Balanço"], ["dmpl", "DMPL"], ["dfc", "DFC indireto"], ["direto", "DFC direto"], ["dva", "DVA"], ["diario", "Diário"], ["razao", "Razão"]];
+  const when = month ? `31/${month.slice(5)}/2026` : "31/12/2026";
   return <>
     <div className="filters no-print">
       <label className="field">Período<select value={month} onChange={(event) => setMonth(event.target.value)}>{MONTH_OPTIONS.map(([value, label]) => <option key={value || "ano"} value={value}>{label}</option>)}</select></label>
       <button className="secondary" onClick={() => download("demonstracoes-2026.csv", statementCsv(books), "text/csv")}>Exportar CSV</button>
       <button className="secondary" onClick={() => window.print()}>Imprimir</button>
     </div>
-    <div className="tabs no-print">{views.map(([id, name]) => <button key={id} className={view === id ? "selected" : ""} onClick={() => setView(id)}>{name}</button>)}</div>
     {month === "2026-12" && <p className="hint">Dezembro inclui as operações do mês e a apuração do ano inteiro, lançada em 31/12. A soma dos doze meses fecha com o lucro anual.</p>}
-    {view === "dre" && <Sheet company={settings.companyName} title="Demonstração do resultado" period={period}><Lines rows={books.dreLines} /></Sheet>}
-    {view === "bp" && <Balance company={settings.companyName} period={`Em ${month ? "31/" + month.slice(5) + "/2026" : "31/12/2026"}`} books={books} />}
-    {view === "dmpl" && <Dmpl company={settings.companyName} period={period} books={books} />}
-    {view === "dfc" && <CashFlow company={settings.companyName} period={period} books={books} />}
-    {view === "direto" && <DirectFlow company={settings.companyName} period={period} books={books} />}
-    {view === "dva" && <Dva company={settings.companyName} period={period} books={books} />}
-    {view === "diario" && <Sheet company={settings.companyName} title="Livro diário" period={period}><JournalTable rows={books.journal} /></Sheet>}
-    {view === "razao" && <Ledger company={settings.companyName} period={period} journal={books.journal} />}
+    {report === "dre" && <Sheet><Lines rows={books.dreLines} /></Sheet>}
+    {report === "bp" && <Balance period={period} when={when} books={books} />}
+    {report === "dmpl" && <Dmpl books={books} />}
+    {report === "dfc" && <CashFlow books={books} />}
+    {report === "direto" && <DirectFlow books={books} />}
+    {report === "dva" && <Dva books={books} />}
+    {report === "diario" && <Sheet><JournalTable rows={books.journal} /></Sheet>}
+    {report === "razao" && <Ledger journal={books.journal} />}
   </>;
 }
-function Sheet({ company, title, period, children }) {
-  return <article className="sheet"><p className="sheet-kicker">{company || "Papelaria"}</p><h2>{title}</h2><p className="sheet-period">{period}</p>{children}</article>;
+function Sheet({ children }) {
+  return <div className="relato">{children}</div>;
 }
 function Lines({ rows }) {
   let inside = false;
@@ -465,24 +497,24 @@ function Lines({ rows }) {
     return <tr className={row.kind === "grand" ? "grand" : row.kind === "total" ? "total" : indent ? "indent" : ""} key={index}><td>{row.label || row.name}</td><td className={row.value === 0 ? "num zero" : "num"}>{formatNumber(row.value)}</td></tr>;
   })}</tbody></table>;
 }
-function Balance({ company, period, books }) {
+function Balance({ when, books }) {
   const ativo = [{ name: "Ativo circulante", header: true }, ...books.assetCurrent, { name: "Ativo não circulante", header: true }, ...books.assetNonCurrent, { name: "Total do ativo", value: books.assetsTotal, kind: "grand" }];
   const passivo = [{ name: "Passivo circulante", header: true }, ...books.liabilityCurrent, { name: "Passivo não circulante", header: true }, ...books.liabilityNonCurrent, { name: "Total do passivo", value: books.liabilitiesTotal, kind: "total" }, { name: "Patrimônio líquido", header: true }, ...books.equityRows.map((row) => ({ ...row, depth: 1 })), { name: "Total do passivo e do patrimônio líquido", value: books.liabilitiesTotal + books.equityTotal, kind: "grand" }];
-  return <Sheet company={company} title="Balanço patrimonial" period={period}>
+  return <Sheet>
     <h3>Ativo</h3><Lines rows={ativo} />
     <h3>Passivo e patrimônio líquido</h3><Lines rows={passivo} />
-    <p className={books.difference === 0 ? "ok" : "bad"}>{books.difference === 0 ? "Ativo igual a passivo mais patrimônio líquido." : `Diferença de ${formatBRL(books.difference)}.`}</p>
+    <Carimbo difference={books.difference} when={when} />
   </Sheet>;
 }
-function Dmpl({ company, period, books }) {
+function Dmpl({ books }) {
   const rows = [...books.dmplRows, { name: "Saldo final", capital: books.dmplFinal.capital, reserves: books.dmplFinal.reserves, retained: books.dmplFinal.retained }];
-  return <Sheet company={company} title="Mutações do patrimônio líquido" period={period}>
+  return <Sheet>
     <div className="table-wrap"><table className="matrix"><thead><tr><th></th><th className="num">Capital social</th><th className="num">Reservas de lucros</th><th className="num">Lucros acumulados</th><th className="num">Total</th></tr></thead><tbody>
       {rows.map((row) => <tr className={row.name === "Saldo final" ? "grand" : ""} key={row.name}><td>{row.name}</td><td className="num">{formatNumber(row.capital)}</td><td className="num">{formatNumber(row.reserves)}</td><td className="num">{formatNumber(row.retained)}</td><td className="num">{formatNumber(row.capital + row.reserves + row.retained)}</td></tr>)}
     </tbody></table></div>
   </Sheet>;
 }
-function CashFlow({ company, period, books }) {
+function CashFlow({ books }) {
   const flow = books.indirect;
   const rows = [
     { name: "Atividades operacionais", header: true }, ...flow.operational, { name: "Caixa gerado nas operações", value: flow.operatingNet, kind: "total" },
@@ -492,9 +524,9 @@ function CashFlow({ company, period, books }) {
     { name: "Caixa inicial", value: books.cashFlow.openingCash, kind: "item" },
     { name: "Caixa final", value: books.cashFlow.closingCash, kind: "grand" },
   ];
-  return <Sheet company={company} title="Fluxo de caixa — método indireto" period={period}><Lines rows={rows} /><p className="hint">Juros pagos permanecem no operacional, pelo lucro líquido e pelo ajuste de juros a pagar.</p></Sheet>;
+  return <Sheet><Lines rows={rows} /><p className="hint">Juros pagos permanecem no operacional, pelo lucro líquido e pelo ajuste de juros a pagar.</p></Sheet>;
 }
-function DirectFlow({ company, period, books }) {
+function DirectFlow({ books }) {
   const groups = books.direct.groups;
   const section = (title, rows, sign = 1) => [{ name: title, header: true }, ...(rows.length ? rows.map((row) => ({ name: row.name, value: sign * row.value })) : [{ name: "—", value: 0 }])];
   const rows = [
@@ -508,9 +540,9 @@ function DirectFlow({ company, period, books }) {
     { name: "Caixa de financiamento", value: books.direct.financingNet, kind: "total" },
     { name: "Variação do caixa", value: books.direct.operatingNet + books.direct.investingNet + books.direct.financingNet, kind: "grand" },
   ];
-  return <Sheet company={company} title="Fluxo de caixa — método direto" period={period}><p className="hint">Visão extra. A folha pede o método indireto.</p><Lines rows={rows} /></Sheet>;
+  return <Sheet><p className="hint">Visão extra. A folha pede o método indireto.</p><Lines rows={rows} /></Sheet>;
 }
-function Dva({ company, period, books }) {
+function Dva({ books }) {
   const dva = books.dva;
   const rows = [
     { name: "Receitas", header: true }, ...dva.revenues, { name: "Receita líquida", value: dva.netRevenue, kind: "total" },
@@ -521,11 +553,11 @@ function Dva({ company, period, books }) {
     { name: "Distribuição", header: true }, ...dva.distribution,
     { name: "Valor distribuído", value: dva.distributed, kind: "grand" },
   ];
-  return <Sheet company={company} title="Valor adicionado" period={period}><Lines rows={rows} /><p className={dva.difference === 0 ? "ok" : "bad"}>{dva.difference === 0 ? "O valor adicionado líquido foi todo distribuído." : `Diferença de ${formatBRL(dva.difference)}.`}</p></Sheet>;
+  return <Sheet><Lines rows={rows} /><p className="hint">{dva.difference === 0 ? "O valor adicionado líquido foi todo distribuído." : `Diferença de ${formatNumber(dva.difference)}.`}</p></Sheet>;
 }
-function Ledger({ company, period, journal }) {
+function Ledger({ journal }) {
   const accounts = ledgerFrom(journal);
-  return <Sheet company={company} title="Livro razão" period={period}>{accounts.map((account) => <section className="account" key={account.name}><h3>{account.name}</h3><table className="data"><thead><tr><th>Data</th><th>Histórico</th><th className="num">Débito</th><th className="num">Crédito</th><th className="num">Saldo</th></tr></thead><tbody>{account.lines.map((line, index) => <tr key={index}><td>{formatDate(line.date)}</td><td>{line.history}</td><td className="num">{line.debit ? formatNumber(line.debit) : ""}</td><td className="num">{line.credit ? formatNumber(line.credit) : ""}</td><td className="num">{formatNumber(line.balance)}</td></tr>)}</tbody></table></section>)}{!accounts.length && <p className="quiet">Sem movimento.</p>}</Sheet>;
+  return <Sheet>{accounts.map((account) => <section className="account" key={account.name}><h3>{account.name}</h3><table className="data"><thead><tr><th>Data</th><th>Histórico</th><th className="num">Débito</th><th className="num">Crédito</th><th className="num">Saldo</th></tr></thead><tbody>{account.lines.map((line, index) => <tr key={index}><td>{formatDate(line.date)}</td><td>{line.history}</td><td className="num">{line.debit ? formatNumber(line.debit) : ""}</td><td className="num">{line.credit ? formatNumber(line.credit) : ""}</td><td className="num">{formatNumber(line.balance)}</td></tr>)}</tbody></table></section>)}{!accounts.length && <p className="quiet">Sem movimento.</p>}</Sheet>;
 }
 
 function Extras({ settings, setSettings, data, cash, entries, setData, setCash, setEntries, books, onSample, onClear }) {
