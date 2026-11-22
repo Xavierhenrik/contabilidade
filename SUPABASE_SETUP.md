@@ -6,12 +6,13 @@ Projeto Supabase informado: `https://xfsuukxxvnvwsivuqgzg.supabase.co`
 
 1. Abra o seu projeto Supabase em [supabase.com/dashboard](https://supabase.com/dashboard).
 2. Em **SQL Editor**, execute por completo o arquivo [supabase/migrations/20261113_public_shared_accounting.sql](supabase/migrations/20261113_public_shared_accounting.sql). Ele cria uma linha compartilhada, histórico privado, permissões de leitura e função controlada de gravação.
-3. Vá a **Project Settings → API Keys** (ou **Connect → API Keys**, conforme a versão). Copie SOMENTE a chave **publishable** do projeto, começando em `sb_publishable_`. Não use a chave secret ou `service_role`.
-4. Na Vercel, projeto **contabilidade → Settings → Environment Variables**, configure:
+3. No mesmo **SQL Editor**, execute em seguida [supabase/migrations/20261122_shared_accounting_settings_and_events.sql](supabase/migrations/20261122_shared_accounting_settings_and_events.sql). Essa migration precisa ser rodada antes de usar a versão nova. Ela só substitui a função de gravação: passa a aceitar `settings` como objeto opcional e os tipos `devolucao`, `pagamento_emprestimo`, `pagamento_encargo`, `dividendos`, `reserva`, `integralizacao`, `reducao_capital` e `aquisicao`, além dos 14 tipos antigos. Sem esse passo, o banco recusa o payload novo. Dados já gravados, sem `settings`, continuam válidos.
+4. Vá a **Project Settings → API Keys** (ou **Connect → API Keys**, conforme a versão). Copie SOMENTE a chave **publishable** do projeto, começando em `sb_publishable_`. Não use a chave secret ou `service_role`.
+5. Na Vercel, projeto **contabilidade → Settings → Environment Variables**, configure:
    - `VITE_SUPABASE_URL`: `https://xfsuukxxvnvwsivuqgzg.supabase.co` (já informada à Vercel)
    - `VITE_SUPABASE_PUBLISHABLE_KEY`: sua chave `sb_publishable_...` (ainda precisa ser adicionada)
-5. Faça um novo deploy de produção para que as variáveis sejam incorporadas ao bundle do Vite.
-6. Ao abrir o site, veja o status **Dados compartilhados sincronizados**. Na primeira vez, se existirem cadastros no navegador, use **Importar dados locais anteriores** para migrá-los. A importação substitui o conjunto compartilhado mediante confirmação.
+6. Faça um novo deploy de produção para que as variáveis sejam incorporadas ao bundle do Vite.
+7. Ao abrir o site, veja o status **Dados compartilhados sincronizados**. Na primeira vez, se existirem cadastros no navegador, use **Importar dados locais anteriores** para migrá-los. A importação substitui o conjunto compartilhado mediante confirmação.
 
 ## Comportamento
 

@@ -16,6 +16,7 @@ import {
   validateBackup,
 } from "./engine.js";
 import { papelariaOpening } from "./sample.js";
+import { SharedIndicator, useSharedAccounting } from "./SharedAccounting.jsx";
 
 const DATA_KEY = "contabilidade-cadastros";
 const CASH_KEY = "contabilidade-caixa-inicial";
@@ -84,6 +85,7 @@ export function App() {
   useEffect(() => localStorage.setItem(CASH_KEY, cash), [cash]);
   useEffect(() => localStorage.setItem(ENTRY_KEY, JSON.stringify(entries)), [entries]);
   useEffect(() => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)), [settings]);
+  const shared = useSharedAccounting({ data, setData, cash, setCash, entries, setEntries, settings, setSettings });
   const books = useMemo(() => computeBooks({ items: data.items, assets: data.assets, entries, cash, settings }), [data, entries, cash, settings]);
   const reportMeta = REPORTS.find((row) => row[0] === report) || REPORTS[0];
   const [fichaNo, fichaTitle] = menu === "demonstracoes" ? [reportMeta[2], reportMeta[3]] : FICHA[menu];
@@ -91,14 +93,14 @@ export function App() {
   function loadSample() {
     if (entries.length && !confirm("Trocar os cadastros pelo exemplo da papelaria? Os lançamentos atuais serão apagados.")) return;
     const sample = papelariaOpening();
-    setData({ items: sample.items, suppliers: [], customers: [], assets: sample.assets, accounts: [] });
-    setCash(sample.cash);
-    setSettings(sample.settings);
-    setEntries([]);
+    shared.setSharedData({ items: sample.items, suppliers: [], customers: [], assets: sample.assets, accounts: [] });
+    shared.setSharedCash(sample.cash);
+    shared.setSharedSettings(sample.settings);
+    shared.setSharedEntries([]);
   }
   function clearAll() {
     if (!confirm("Apagar cadastros, lançamentos e saldo deste navegador?")) return;
-    setData(emptyData()); setCash(""); setEntries([]); setSettings(defaultSettings());
+    shared.setSharedData(emptyData()); shared.setSharedCash(""); shared.setSharedEntries([]); shared.setSharedSettings(defaultSettings());
   }
   return <div className="gaveta-app">
     <header className="gaveta">
@@ -106,6 +108,7 @@ export function App() {
       <span className="puxador" aria-hidden="true" />
       <span className="ano">Exercício 2026</span>
     </header>
+    <SharedIndicator shared={shared} />
     <nav className="abas" aria-label="Menu principal">
       {MENUS.map(([id, name]) => <button key={id} data-tab={id} className={menu === id ? "aba on" : "aba"} onClick={() => setMenu(id)}>{name}</button>)}
     </nav>
@@ -120,12 +123,12 @@ export function App() {
         <div className="numeros" aria-hidden="true"><span>{Array.from({ length: 60 }, (_, index) => String(index + 1).padStart(2, "0")).join("\n")}</span></div>
         <div className="miolo">
           {menu === "inicio" && <Dashboard books={books} settings={settings} data={data} onSample={loadSample} />}
-          {menu === "cadastros" && <Registers data={data} setData={setData} cash={cash} setCash={setCash} entries={entries} books={books} settings={settings} setSettings={setSettings} />}
-          {menu === "lancamentos" && <Journal data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
+          {menu === "cadastros" && <Registers data={data} setData={shared.setSharedData} cash={cash} setCash={shared.setSharedCash} entries={entries} books={books} settings={settings} setSettings={shared.setSharedSettings} />}
+          {menu === "lancamentos" && <Journal data={data} entries={entries} setEntries={shared.setSharedEntries} cash={cash} settings={settings} books={books} />}
           {menu === "estoque" && <Stock data={data} books={books} />}
-          {menu === "prazo" && <Credit data={data} entries={entries} setEntries={setEntries} cash={cash} settings={settings} books={books} />}
+          {menu === "prazo" && <Credit data={data} entries={entries} setEntries={shared.setSharedEntries} cash={cash} settings={settings} books={books} />}
           {menu === "demonstracoes" && <Statements report={report} setReport={setReport} month={month} setMonth={setMonth} settings={settings} data={data} entries={entries} cash={cash} />}
-          {menu === "extras" && <Extras settings={settings} setSettings={setSettings} data={data} cash={cash} entries={entries} setData={setData} setCash={setCash} setEntries={setEntries} books={books} onSample={loadSample} onClear={clearAll} />}
+          {menu === "extras" && <Extras settings={settings} setSettings={shared.setSharedSettings} data={data} cash={cash} entries={entries} setData={shared.setSharedData} setCash={shared.setSharedCash} setEntries={shared.setSharedEntries} books={books} onSample={loadSample} onClear={clearAll} />}
         </div>
       </div>
       {menu === "demonstracoes" && <nav className="indice no-print" aria-label="Demonstrações">
