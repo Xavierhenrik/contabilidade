@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from "react";
+import {apply as applyPayload,payloadFor} from "./sharedPayload.js";
 
 const URL=(import.meta.env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
 const KEY=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY||"";
@@ -21,21 +22,17 @@ async function writeRemote(version,payload){
  if(!res.ok)throw new Error(obj?.message||"Falha ao salvar ("+res.status+")");
  return obj;
 }
-const payloadFor=(data,cash,entries)=>({schema:1,exercise:2026,data,cash:String(cash),entries});
 function hasData(snapshot){
  return snapshot.entries.length>0||Object.values(snapshot.data).some(rows=>rows.length>0)||Number(snapshot.cash)!==0;
 }
-export function useSharedAccounting({data,setData,cash,setCash,entries,setEntries}){
- const initial=useRef(payloadFor(data,cash,entries));
+export function useSharedAccounting({data,setData,cash,setCash,entries,setEntries,settings,setSettings}){
+ const initial=useRef(payloadFor(data,cash,entries,settings));
  const [ready,setReady]=useState(!CONFIGURED),[status,setStatus]=useState(CONFIGURED?"Carregando banco compartilhado...":"Modo local — Supabase ainda não configurado"),[changeId,setChangeId]=useState(0);
  const version=useRef(null),pending=useRef(false),changes=useRef(0),timer=useRef(null),lock=useRef(false);
- const current=useRef(payloadFor(data,cash,entries));
- current.current=payloadFor(data,cash,entries);
+ const current=useRef(payloadFor(data,cash,entries,settings));
+ current.current=payloadFor(data,cash,entries,settings);
  changes.current=changeId;
- const apply=(row)=>{
-  version.current=Number(row.versao);
-  setData(row.dados.data);setCash(String(row.dados.cash));setEntries(row.dados.entries);
- };
+ const apply=(row)=>{ version.current=applyPayload(row,{setData,setCash,setEntries,setSettings}); };
  const load=useCallback(async()=>{
   if(!CONFIGURED)return;
   if(pending.current||changes.current>0)return;
@@ -44,7 +41,7 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
    const row=await readRemote();
    apply(row);setReady(true);lock.current=false;setStatus("Dados compartilhados sincronizados");
   }catch(e){setStatus("Erro de conexão: "+e.message);setReady(false)}
- },[setData,setCash,setEntries]);
+ },[setData,setCash,setEntries,setSettings]);
  useEffect(()=>{
   if(!CONFIGURED)return;
   let cancelled=false;
@@ -53,7 +50,7 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
    apply(row);setReady(true);setStatus("Dados compartilhados sincronizados");
   }).catch(e=>{if(!cancelled){setStatus("Erro de conexão: "+e.message);setReady(false)}});
   return()=>{cancelled=true};
- },[setData,setCash,setEntries]);
+ },[setData,setCash,setEntries,setSettings]);
 
  const save=useCallback(async()=>{
   if(!CONFIGURED||!ready||lock.current||pending.current||changes.current===0)return;
@@ -84,7 +81,7 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
   clearTimeout(timer.current);timer.current=null;
   const t=setTimeout(()=>save(),900);
   return()=>clearTimeout(t);
- },[ready,changeId,data,cash,entries,save]);
+ },[ready,changeId,data,cash,entries,settings,save]);
 
  useEffect(()=>{
   if(!CONFIGURED||!ready)return;
@@ -96,7 +93,7 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
    }catch(e){setStatus("Falha temporária ao atualizar: "+e.message)}
   },12000);
   return()=>clearInterval(t);
- },[ready,setData,setCash,setEntries]);
+ },[ready,setData,setCash,setEntries,setSettings]);
 
  function changed(setter){
   return updater=>{
@@ -105,7 +102,7 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
    if(CONFIGURED)setChangeId(n=>n+1);
   };
  }
- const sharedData=changed(setData),sharedCash=changed(setCash),sharedEntries=changed(setEntries);
+ const sharedData=changed(setData),sharedCash=changed(setCash),sharedEntries=changed(setEntries),sharedSettings=changed(setSettings);
 
  async function importLocal(){
   if(!CONFIGURED||!ready||pending.current||changeId!==0)return;
@@ -119,13 +116,14 @@ export function useSharedAccounting({data,setData,cash,setCash,entries,setEntrie
    const result=await writeRemote(version.current,initial.current);
    version.current=Number(result.versao);
    setData(initial.current.data);setCash(initial.current.cash);setEntries(initial.current.entries);
+   if(initial.current.settings)setSettings(initial.current.settings);
    setStatus("Dados locais importados para o Supabase.");
-   initial.current=payloadFor(initial.current.data,initial.current.cash,initial.current.entries);
+   initial.current=payloadFor(initial.current.data,initial.current.cash,initial.current.entries,initial.current.settings);
   }catch(e){setStatus("Importação não realizada: "+e.message)}
  }
  return {
   configured:CONFIGURED,ready,status,
-  setSharedData:sharedData,setSharedCash:sharedCash,setSharedEntries:sharedEntries,
+  setSharedData:sharedData,setSharedCash:sharedCash,setSharedEntries:sharedEntries,setSharedSettings:sharedSettings,
   importLocal,canImport:CONFIGURED&&ready&&hasData(initial.current),
   reload:async()=>{if(changes.current>0&&!confirm("Descartar alterações locais ainda não salvas?"))return;changes.current=0;setChangeId(0);lock.current=false;clearTimeout(timer.current);timer.current=null;pending.current=false;await load();}
  };
